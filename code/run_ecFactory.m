@@ -135,7 +135,7 @@ step = step+1;
 disp([num2str(step) '.-  **** Running EUVA for optimal production conditions (minimal biomass) ****'])
 tempModel = model;
 disp(' ')
-disp('  - Fixed unit glucose uptake rate')
+disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
 %Fix unit C source uptake
 tempModel.lb(modelParam.CUR_indx) = (1-tol)*1;
 tempModel.ub(modelParam.CUR_indx) = (1+tol)*1;
@@ -194,7 +194,7 @@ disp('  - Discard enzymes essential for production from deletion targets')
 toRemove = (strcmpi(candidates.EV_type,'essential_tightly_const') | strcmpi(candidates.EV_type,'essential')) & ...
        (candidates.k_scores<=delLimit);
 candidates(toRemove,:) = [];       
-disp(' - Discard isoenzyme groups for KD/KO that contain an optimal isoform (redundant groups that increase mutant complexity)')
+disp('  - Discard isoenzyme groups for KD/KO that contain an optimal isoform (redundant groups that increase mutant complexity)')
 toRemove = [];
 for k=1:max(candidates.groups)
     idx = find(candidates.groups==k & ~strcmpi(candidates.actions,'OE'));
@@ -215,7 +215,7 @@ disp('  ')
 step = step+1;
 disp('  ')
 disp([num2str(step) '.-  **** Running EUVA for reference strain  ****'])
-disp('  - Fixed unit glucose uptake rate')
+disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
 disp('  - Production rate subject to a LB of 1% of its max. value')
 disp('  - Biomass production fixed to its maximum attainable value')
 tempModel = setParam(tempModel, 'obj', modelParam.growth_indx, +1);
