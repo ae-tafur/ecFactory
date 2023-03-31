@@ -137,11 +137,11 @@ tempModel = model;
 disp(' ')
 disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
 %Fix unit C source uptake
-tempModel.lb(modelParam.CUR_indx) = (1-tol)*1;
-tempModel.ub(modelParam.CUR_indx) = (1+tol)*1;
+tempModel.lb(modelParam.CUR_indx) = (1-tol)*modelParam.CSusage;
+tempModel.ub(modelParam.CUR_indx) = (1+tol)*modelParam.CSusage;
 disp('  - Fixed suboptimal biomass production, according to provided experimental yield')
 %Fix suboptimal experimental biomass yield conditions
-V_bio = expYield*modelParam.CS_MW;
+V_bio = expYield*modelParam.CS_MW*modelParam.CSusage;
 tempModel.lb(modelParam.growth_indx) = V_bio;
 disp(['    V_bio = ' num2str(V_bio) ' h-1'])
 disp('  - Production rate constrained to its maximum attainable value')
