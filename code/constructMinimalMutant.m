@@ -18,16 +18,16 @@ for i=1:height(candidates)
     mutF   = 1;%candidates.OE(i);
     enzIdx = candidates.enz_pos(i);
     tempModel = optMutant;
-    
+
     if enzIdx>0
         tempModel.ub(enzIdx) = 1.01*candidates.maxUsage(i);
         tempModel.lb(enzIdx) = 0;
         if tempModel.ub(enzIdx) <=tempModel.lb(enzIdx)
             tempModel.lb(enzIdx) = 0.95*tempModel.ub(enzIdx);
         end
-       optMutant = tempModel;
+
+        optMutant = tempModel;
         %for reactions without enzymatic reaction
-    
     else
         if strcmpi(action,'OE')
             enzUsage = 1.01*candidates.maxUsage(i);
@@ -42,15 +42,14 @@ for i=1:height(candidates)
             end
         end
         modifications = {gene action mutF};
-        
+
         [tempModel,success] = getMutantModel(optMutant,modifications,enzUsage);
-         if success
+        if success
             optMutant = tempModel;
         else
             toRemove = [toRemove; i];
         end
     end
-    
 end
 
 if ~isempty(toRemove)
@@ -63,13 +62,15 @@ optMutant = setParam(optMutant,'obj',modelParam.targetIndx,1);
 %obtain optimal production rate and yield
 [mutSol_r,~] = solveECmodel(optMutant,model,'pFBA',modelParam.prot_indx);
 [mutSol_y,~] = solveECmodel(optMutant,model,'pFBA',modelParam.CUR_indx);
-OptprodR =  mutSol_y(modelParam.targetIndx);%mutSol_r(modelParam.targetIndx);
+OptprodR = mutSol_y(modelParam.targetIndx);
 Optyield = mutSol_y(modelParam.targetIndx)/(mutSol_y(modelParam.CUR_indx));
-bYield    = mutSol_y(modelParam.growth_indx)/(mutSol_y(modelParam.CUR_indx)*modelParam.CS_MW);
+bYield   = mutSol_y(modelParam.growth_indx)/(mutSol_y(modelParam.CUR_indx)*modelParam.CS_MW);
 disp('Finding a minimal combination of targets displaying:')
 disp([' - a production rate of: ' num2str(OptprodR) ' mmol/gDwh'])
-disp([' - a production yield of: ' num2str(Optyield) ' mmol/mmol glucose'])
-disp([' - a biomass yield of: ' num2str(bYield) 'g biomass/g glucose'])
+disp([' - a production yield of: ' num2str(Optyield) ' mmol/mmol ' ...
+    erase(modelParam.CSname, ' exchange (reversible)')])
+disp([' - a biomass yield of: ' num2str(bYield) 'g biomass/g ' ...
+    erase(modelParam.CSname, ' exchange (reversible)')])
 disp(' ')
 %sort targets by priority level and k_score
 [levelCandidates,~] = sortrows(candidates,{'priority' 'k_scores'},{'ascend' 'ascend'});
@@ -85,7 +86,7 @@ for i=1:height(levelCandidates)
     tempMutant = optMutant;
     %revert mutation
     if enzIdx>0
-        saturationOpt         =  mutSol_r(enzIdx)/(optMutant.ub(enzIdx)+1E-15);
+        saturationOpt         = mutSol_r(enzIdx)/(optMutant.ub(enzIdx)+1E-15);
         tempMutant.ub(enzIdx) = 1.01*model.ub(enzIdx);
         tempMutant.lb(enzIdx) = 0.99*model.lb(enzIdx);
         if tempMutant.ub(enzIdx) <=tempMutant.lb(enzIdx)
@@ -120,16 +121,14 @@ for i=1:height(levelCandidates)
         if (strcmpi(action,'OE') & saturationM <= (model.ub(enzIdx)/levelCandidates.maxUsage(i)))
             flag = false;
         end
-        
     else
         saturationM = NaN;
     end
     FC_y  = mutyield/Optyield;
     FC_p  = mutprodR/OptprodR;
     score = mean([FC_y,FC_p]);
-    %Discard genes that don't affect the optimal phenotype
-    %discard OE targets that show low saturation after reversing the
-    %modification
+    % Discard genes that don't affect the optimal phenotype
+    % Discard OE targets that show low saturation after reversing the modification
     
     if isnan(score)
         score = 0;
