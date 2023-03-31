@@ -1,0 +1,8 @@
+# Hidden system files
+.DS_Store
+
+# Hide idea folder
+.idea/
+
+# Matlab files
+*.asv
