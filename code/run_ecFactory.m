@@ -2,10 +2,11 @@ function [optStrain,remaining,step] = run_ecFactory(model,modelParam,expYield,re
 if nargin<5
     graphPlot = false;
 end
-if ~isfolder('GECKO')
-    git clone --quiet --depth=1 https://github.com/SysBioChalmers/GECKO.git
+
+if ~exist(results_folder, 'dir')
+    mkdir(results_folder)
 end
-mkdir(results_folder)
+
 current      = pwd;
 %method parameters
 tol  = 1E-13; %numeric tolerance for determining non-zero enzyme usages
@@ -15,7 +16,6 @@ step = 0;
 %Parameters for FSEOF method
 Nsteps     = 16; %number of FBA steps in ecFSEOF
 alphaLims  = [0.5*expYield 2*expYield]; %biomass yield limits for ecFSEOF
-lowerK     = 0.5/2;
 thresholds = [0.5 1.05]; %K-score thresholds for valid gene targets
 delLimit   = 0.05; %K-score limit for considering a target as deletion
 %read file with essential genes list
@@ -40,8 +40,8 @@ else
     error('The provided target reaction is not part of the ecModel.rxns field')
 end
 %output files for genes and rxn targets
-file1   = 'results/genesResults_ecFSEOF.txt';
-file2   = 'results/rxnsResults_ecFSEOF.txt';
+file1   = [results_folder '/genesResults_ecFSEOF.txt'];
+file2   = [results_folder '/rxnsResults_ecFSEOF.txt'];
 
 % 1.- Run FSEOF to find gene candidates
 cd GECKO/geckomat/utilities/ecFSEOF
@@ -308,11 +308,11 @@ copyfile(origin,results_folder)
 step = step+1;
 disp([num2str(step) '.-  **** Find transporter reactions with no enzyme association predicted as targets by ecFSEOF ****'])
 disp(' ')
-rxnsTable     = readtable([results_folder '/rxnsResults_ecFSEOF.txt'],'Delimiter','\t');
+rxnsTable     = readtable(file2,'Delimiter','\t');
 transpTargets = getTransportTargets(rxnsTable,tempModel);
 disp([' * ' num2str(height(transpTargets)) ' transport reaction targets were found']) 
 disp(' ')
 writetable(transpTargets,[results_folder '/transporter_targets.txt'],'Delimiter','\t','QuoteStrings',false);
-delete([results_folder '/rxnsResults_ecFSEOF.txt'])
-delete([results_folder '/genesResults_ecFSEOF.txt'])
+delete(file1)
+delete(file2)
 end
