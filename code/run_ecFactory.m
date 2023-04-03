@@ -1,4 +1,4 @@
-function [optStrain,remaining,step] = run_ecFactory(model,modelParam,expYield,results_folder,graphPlot)
+function [optStrain,remaining,step] = run_ecFactory(model,modelParam,expYield,results_folder,graphPlot,geckoDir)
 if nargin<5
     graphPlot = false;
 end
@@ -40,12 +40,12 @@ else
     error('The provided target reaction is not part of the ecModel.rxns field')
 end
 %output files for genes and rxn targets
-file1   = [results_folder '/genesResults_ecFSEOF.txt'];
-file2   = [results_folder '/rxnsResults_ecFSEOF.txt'];
+file1   = fullfile(results_folder, 'genesResults_ecFSEOF.txt');
+file2   = fullfile(results_folder, 'rxnsResults_ecFSEOF.txt');
 
 % 1.- Run FSEOF to find gene candidates
-cd GECKO/geckomat/utilities/ecFSEOF
-mkdir('results')
+cd(fullfile(geckoDir,"utilities","ecFSEOF"))
+% mkdir('results')
 step = step+1;
 disp([num2str(step) '.-  **** Running ecFSEOF method (from GECKO utilities) ****'])
 results = run_ecFSEOF(model,modelParam.rxnTarget,modelParam.CSrxn,alphaLims,Nsteps,file1,file2);
@@ -105,7 +105,7 @@ toRemove  = iB & candidates.k_scores<=delLimit;
 candidates(toRemove,:) = [];
 disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
 disp('  ')
-writetable(candidates,[results_folder '/candidates_L1.txt'],'Delimiter','\t','QuoteStrings',false);
+writetable(candidates,fullfile(results_folder, 'candidates_L1.txt'),'Delimiter','\t','QuoteStrings',false);
 proteins = strcat('draw_prot_',candidates.enzymes);
 [~,enz_pos] = ismember(proteins,model.rxns);
 candidates.enz_pos = enz_pos;
@@ -266,7 +266,7 @@ ratios   = candidates.pUsage./candidates.pUsageBio;
 idxs     = ratios < bioRatio+1E-9 & ratios > bioRatio-1E-9;
 candidates.EV_type(idxs) = {'biomass_coupled'};
 disp(' ')
-writetable(candidates,[results_folder '/candidates_L2.txt'],'Delimiter','\t','QuoteStrings',false);
+writetable(candidates,fullfile(results_folder, 'candidates_L2.txt'),'Delimiter','\t','QuoteStrings',false);
 % 8.- Combine targets
 step = step+1;
 disp([num2str(step) '.-  **** Find an optimal combination of remaining targets ****'])
@@ -299,12 +299,12 @@ disp([' * The predicted optimal strain contains ' num2str(height(remaining)) ' g
 disp(' ')
 
 cd (current) 
-writetable(remaining,[results_folder '/candidates_L3.txt'],'Delimiter','\t','QuoteStrings',false);
+writetable(remaining,fullfile(results_folder, 'candidates_L3.txt'),'Delimiter','\t','QuoteStrings',false);
 %Generate transporter targets file (lists a number of transport steps
 %with no enzymatic annotation that are relevant for enhancing target
 %product formation.
-origin = 'GECKO/geckomat/utilities/ecFSEOF/results/*';
-copyfile(origin,results_folder)
+% origin = 'GECKO/geckomat/utilities/ecFSEOF/results/*';
+% copyfile(origin,results_folder)
 step = step+1;
 disp([num2str(step) '.-  **** Find transporter reactions with no enzyme association predicted as targets by ecFSEOF ****'])
 disp(' ')
@@ -312,7 +312,7 @@ rxnsTable     = readtable(file2,'Delimiter','\t');
 transpTargets = getTransportTargets(rxnsTable,tempModel);
 disp([' * ' num2str(height(transpTargets)) ' transport reaction targets were found']) 
 disp(' ')
-writetable(transpTargets,[results_folder '/transporter_targets.txt'],'Delimiter','\t','QuoteStrings',false);
+writetable(transpTargets,fullfile(results_folder, 'transporter_targets.txt'),'Delimiter','\t','QuoteStrings',false);
 delete(file1)
 delete(file2)
 end
