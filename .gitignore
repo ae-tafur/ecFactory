@@ -3,6 +3,7 @@
 
 # Hide idea folder
 .idea/
+*iml
 
 # Matlab files
 *.asv
