@@ -1,5 +1,6 @@
-function [optStrain,remaining,step] = run_ecFactory(model,modelParam,expYield,results_folder,graphPlot,geckoDir)
-if nargin<5
+function [optStrain,remaining,step] = run_ecFactory(model,modelParam,expYield,results_folder,graphPlot)
+
+if nargin < 5
     graphPlot = false;
 end
 
@@ -7,35 +8,40 @@ if ~exist(results_folder, 'dir')
     mkdir(results_folder)
 end
 
-current      = pwd;
 %method parameters
-tol  = 1E-13; %numeric tolerance for determining non-zero enzyme usages
+
+tol  = 1E-8;  %numeric tolerance for determining non-zero enzyme usages
 OEF  = 2;     %overexpression factor for enzyme targets
 KDF  = 0.5;   %down-regulation factor for enzyme targets
 step = 0;
+
 %Parameters for FSEOF method
 Nsteps     = 16; %number of FBA steps in ecFSEOF
 alphaLims  = [0.5*expYield 2*expYield]; %biomass yield limits for ecFSEOF
 thresholds = [0.5 1.05]; %K-score thresholds for valid gene targets
 delLimit   = 0.05; %K-score limit for considering a target as deletion
+
 %read file with essential genes list
 essential = readtable('../data/essential_genes.txt','Delimiter','\t');
 essential = strtrim(essential.Ids);
+
 %Get relevant rxn indexes
 modelParam.targetIndx  = find(strcmpi(model.rxns,modelParam.rxnTarget));
 modelParam.CUR_indx    = find(strcmpi(model.rxns,modelParam.CSrxn));
 modelParam.prot_indx   = find(strcmpi(model.rxns,'prot_pool_exchange'));
 modelParam.growth_indx = find(strcmpi(model.rxns,modelParam.growthRxn));
+
 %ecModel verification steps
-model = check_enzyme_fields(model);
+% model = check_enzyme_fields(model); %% add mean MW to those that have
+% this missing
 if ~isempty(modelParam.targetIndx)
     %Check if model can carry flux for the target rxn
-    flux = haveFlux(model,1-12,modelParam.rxnTarget);
-    if flux
-        disp(['* Your ecModel can carry flux through the reaction: ' model.rxnNames{modelParam.targetIndx}])
-    else
-        disp(['* Your ecModel cannot carry flux through the reaction: ' model.rxnNames{modelParam.targetIndx} ', please check the applied constraints'])
-    end
+    % flux = haveFlux(model,1-12,modelParam.rxnTarget); [~, maxFluxes, ~] = getAllowedBounds(model, modelParam.rxnTarget);
+    % if flux
+    %     disp(['* Your ecModel can carry flux through the reaction: ' model.rxnNames{modelParam.targetIndx}])
+    % else
+    %     disp(['* Your ecModel cannot carry flux through the reaction: ' model.rxnNames{modelParam.targetIndx} ', please check the applied constraints'])
+    % end
 else
     error('The provided target reaction is not part of the ecModel.rxns field')
 end
@@ -44,7 +50,7 @@ file1   = fullfile(results_folder, 'genesResults_ecFSEOF.txt');
 file2   = fullfile(results_folder, 'rxnsResults_ecFSEOF.txt');
 
 % 1.- Run FSEOF to find gene candidates
-cd(fullfile(geckoDir,"utilities","ecFSEOF"))
+
 % mkdir('results')
 step = step+1;
 disp([num2str(step) '.-  **** Running ecFSEOF method (from GECKO utilities) ****'])
@@ -60,18 +66,19 @@ actions    = cell(numel(k_scores),1);
 actions(k_scores>=thresholds(2)) = {'OE'};
 actions(k_scores<thresholds(1))  = {'KD'};
 actions(k_scores<delLimit) = {'KO'};
-MWeigths = [];
+
 %Identify candidate genes in model enzymes
 disp(' Extracting enzymatic information for target genes')
-[~,iB]     = ismember(genes,model.enzGenes);
+[~,iB]     = ismember(genes,model.ec.genes);
+MWeigths = [];
 candidates = {};
 pathways   = {};
 %optimize!
 for i=1:numel(iB)
     if iB(i)>0
-        candidates = [candidates; model.enzymes(iB(i))];
-        MWeigths   = [MWeigths; model.MWs(iB(i))];
-        pathways   = [pathways; model.pathways(iB(i))];
+        candidates = [candidates; model.ec.enzymes(iB(i))];
+        MWeigths   = [MWeigths; model.ec.mw(iB(i))];
+        pathways   = [pathways; model.subSystems(iB(i))]; %% revisar
     else
         candidates = [candidates; {''}];
         MWeigths   = [MWeigths; nan];
@@ -92,7 +99,7 @@ disp('  ')
 %consume the product of interest. (probaly extend the approach to inmediate
 %precurssors)
 step = step+1;
-cd (current)
+
 disp([num2str(step) '.-  **** Find flux leak targets to block ****'])
 candidates = find_flux_leaks(candidates,modelParam.targetIndx,model);
 disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
@@ -106,7 +113,7 @@ candidates(toRemove,:) = [];
 disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
 disp('  ')
 writetable(candidates,fullfile(results_folder, 'candidates_L1.txt'),'Delimiter','\t','QuoteStrings',false);
-proteins = strcat('draw_prot_',candidates.enzymes);
+proteins = strcat('usage_prot_',candidates.enzymes);
 [~,enz_pos] = ismember(proteins,model.rxns);
 candidates.enz_pos = enz_pos;
 % 4.- Construct Genes-metabolites network for classification of targets
@@ -137,8 +144,8 @@ tempModel = model;
 disp(' ')
 disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
 %Fix unit C source uptake
-tempModel.lb(modelParam.CUR_indx) = (1-tol)*modelParam.CSusage;
-tempModel.ub(modelParam.CUR_indx) = (1+tol)*modelParam.CSusage;
+tempModel.lb(modelParam.CUR_indx) = -(1+tol)*modelParam.CSusage;
+tempModel.ub(modelParam.CUR_indx) = -(1-tol)*modelParam.CSusage;
 disp('  - Fixed suboptimal biomass production, according to provided experimental yield')
 %Fix suboptimal experimental biomass yield conditions
 V_bio = expYield*modelParam.CS_MW*modelParam.CSusage;
@@ -273,8 +280,8 @@ disp([num2str(step) '.-  **** Find an optimal combination of remaining targets *
 disp(' ')
 %Unconstrain CUR, unconstrain product formation 
 %and set a minimal biomass formation
-tempModel = setParam(tempModel,'ub',modelParam.CUR_indx,1000);
-tempModel = setParam(tempModel,'lb',modelParam.CUR_indx,0);
+tempModel = setParam(tempModel,'ub',modelParam.CUR_indx,0);
+tempModel = setParam(tempModel,'lb',modelParam.CUR_indx,-1000);
 tempModel = setParam(tempModel,'ub',modelParam.growth_indx,1000);
 tempModel = setParam(tempModel,'lb',modelParam.growth_indx,0.99*V_bio);
 tempModel = setParam(tempModel,'ub',modelParam.targetIndx,1000);
@@ -282,8 +289,8 @@ tempModel = setParam(tempModel,'lb',modelParam.targetIndx,0);
 %set Max product formation as objective function
 tempModel = setParam(tempModel,'obj',modelParam.targetIndx,+1);
 %constrain enzyme usages with optimal biomass formation profile (WT)
-tempModel.lb(candidates.enz_pos(find(candidates.enz_pos))) = 0.99*candidates.pUsageBio(find(candidates.enz_pos));
-tempModel.ub(candidates.enz_pos(find(candidates.enz_pos))) = 1.01*candidates.maxUsageBio(find(candidates.enz_pos));
+tempModel.lb(candidates.enz_pos(find(candidates.enz_pos))) = 1.01*candidates.maxUsageBio(find(candidates.enz_pos));
+tempModel.ub(candidates.enz_pos(find(candidates.enz_pos))) = 0.99*candidates.pUsageBio(find(candidates.enz_pos));
 %Run mechanistic validation of targets
 [optStrain,remaining] = constructMinimalMutant(tempModel,candidates,modelParam);
 %get a gene-mets graph with the remaining targets 
@@ -298,7 +305,7 @@ end
 disp([' * The predicted optimal strain contains ' num2str(height(remaining)) ' gene modifications']) 
 disp(' ')
 
-cd (current) 
+
 writetable(remaining,fullfile(results_folder, 'candidates_L3.txt'),'Delimiter','\t','QuoteStrings',false);
 %Generate transporter targets file (lists a number of transport steps
 %with no enzymatic annotation that are relevant for enhancing target
