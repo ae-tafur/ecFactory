@@ -34,25 +34,24 @@ thresholds = [0.5 1.05]; %K-score thresholds for valid gene targets
 delLimit   = 0.05; %K-score limit for considering a target as deletion
 
 %read file with essential genes list
-essential = readtable('../data/essential_genes.txt','Delimiter','\t');
+essential = readtable(fullfile(params.path,'data','essential_genes.tsv'),'Delimiter','\t');
 essential = strtrim(essential.Ids);
 
 %Get relevant rxn indexes
-modelParam.targetIndx  = find(strcmpi(model.rxns,modelParam.rxnTarget));
-modelParam.CUR_indx    = find(strcmpi(model.rxns,modelParam.CSrxn));
-modelParam.prot_indx   = find(strcmpi(model.rxns,'prot_pool_exchange'));
-modelParam.growth_indx = find(strcmpi(model.rxns,modelParam.growthRxn));
+targetRxnIdx  = find(strcmpi(model.rxns, targetRxn));
+csRxnIdx    = find(strcmpi(model.rxns, csRxn));
+bioRxnIdx = find(strcmpi(model.rxns,params.bioRxn));
 
 %ecModel verification steps
 % model = check_enzyme_fields(model); %% add mean MW to those that have
 % this missing
-if ~isempty(modelParam.targetIndx)
+if ~isempty(targetRxnIdx)
     %Check if model can carry flux for the target rxn
-    % flux = haveFlux(model,1-12,modelParam.rxnTarget); [~, maxFluxes, ~] = getAllowedBounds(model, modelParam.rxnTarget);
+    % flux = haveFlux(model,1-12,targetRxn); [~, maxFluxes, ~] = getAllowedBounds(model, targetRxn);
     % if flux
-    %     disp(['* Your ecModel can carry flux through the reaction: ' model.rxnNames{modelParam.targetIndx}])
+    %     disp(['* Your ecModel can carry flux through the reaction: ' model.rxnNames{targetRxnIdx}])
     % else
-    %     disp(['* Your ecModel cannot carry flux through the reaction: ' model.rxnNames{modelParam.targetIndx} ', please check the applied constraints'])
+    %     disp(['* Your ecModel cannot carry flux through the reaction: ' model.rxnNames{targetRxnIdx} ', please check the applied constraints'])
     % end
 else
     error('The provided target reaction is not part of the ecModel.rxns field')
@@ -64,7 +63,7 @@ end
 % mkdir('results')
 step = step+1;
 disp([num2str(step) '.-  **** Running ecFSEOF method (from GECKO utilities) ****'])
-results = run_ecFSEOF(model,modelParam.rxnTarget,modelParam.CSrxn,alphaLims,nSteps,file1,file2);
+results = run_ecFSEOF(model,targetRxn,csRxn,alphaLims,nSteps,file1,file2);
 genes   = results.geneTable(:,1);
 disp('  ')
 disp(['ecFSEOF returned ' num2str(length(genes)) ' targets'])
@@ -111,7 +110,7 @@ disp('  ')
 step = step+1;
 
 disp([num2str(step) '.-  **** Find flux leak targets to block ****'])
-candidates = find_flux_leaks(candidates,modelParam.targetIndx,model);
+candidates = find_flux_leaks(candidates,targetRxnIdx,model);
 disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
 disp('  ')
 % 3.- discard essential genes from deletion targets
@@ -154,20 +153,20 @@ tempModel = model;
 disp(' ')
 disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
 %Fix unit C source uptake
-tempModel.lb(modelParam.CUR_indx) = -(1+tol)*modelParam.CSusage;
-tempModel.ub(modelParam.CUR_indx) = -(1-tol)*modelParam.CSusage;
+tempModel.lb(csRxnIdx) = -(1+tol)*modelParam.CSusage;
+tempModel.ub(csRxnIdx) = -(1-tol)*modelParam.CSusage;
 disp('  - Fixed suboptimal biomass production, according to provided experimental yield')
 %Fix suboptimal experimental biomass yield conditions
-V_bio = expYield*modelParam.CS_MW*modelParam.CSusage;
-tempModel.lb(modelParam.growth_indx) = V_bio;
+V_bio = expYield*csMW*modelParam.CSusage;
+tempModel.lb(bioRxnIdx) = V_bio;
 disp(['    V_bio = ' num2str(V_bio) ' h-1'])
 disp('  - Production rate constrained to its maximum attainable value')
 %Get and fix optimal production rate
-tempModel = setParam(tempModel, 'obj', modelParam.targetIndx, +1);
+tempModel = setParam(tempModel, 'obj', targetRxn, +1);
 sol       = solveLP(tempModel,1);
-max_prod   = sol.x(modelParam.targetIndx);
-tempModel.lb(modelParam.targetIndx) = (1-tol)*max_prod;
-tempModel.ub(modelParam.targetIndx) = (1+tol)*max_prod;
+max_prod   = sol.x(targetRxnIdx);
+tempModel.lb(targetRxnIdx) = (1-tol)*max_prod;
+tempModel.ub(targetRxnIdx) = (1+tol)*max_prod;
 disp(['    V_prod_max = ' num2str(max_prod) ' mmol/gDwh'])
 modelParam.WT_prod = max_prod;
 modelParam.V_bio   = V_bio;
@@ -235,14 +234,14 @@ disp([num2str(step) '.-  **** Running EUVA for reference strain  ****'])
 disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
 disp('  - Production rate subject to a LB of 1% of its max. value')
 disp('  - Biomass production fixed to its maximum attainable value')
-tempModel = setParam(tempModel, 'obj', modelParam.growth_indx, +1);
-tempModel.lb(modelParam.targetIndx) = 0.01*max_prod;
-tempModel.ub(modelParam.targetIndx) = 1000;
+tempModel = setParam(tempModel, 'obj', params.bioRxn, +1);
+tempModel.lb(targetRxnIdx) = 0.01*max_prod;
+tempModel.ub(targetRxnIdx) = 1000;
 sol       = solveLP(tempModel,1);
-maxVBio   = sol.x(modelParam.growth_indx);
+maxVBio   = sol.x(bioRxnIdx);
 %Fix optimal biomass formation rate
-tempModel.lb(modelParam.growth_indx) = (1-tol)*maxVBio;
-tempModel.ub(modelParam.growth_indx) = (1+tol)*maxVBio;
+tempModel.lb(bioRxnIdx) = (1-tol)*maxVBio;
+tempModel.ub(bioRxnIdx) = (1+tol)*maxVBio;
 %run EUVA for optimal biomass formation
 EVAbio = enzymeUsage_FVA(tempModel,candidates.enzymes);
 candidates.minUsageBio = EVAbio.minU;
@@ -290,14 +289,14 @@ disp([num2str(step) '.-  **** Find an optimal combination of remaining targets *
 disp(' ')
 %Unconstrain CUR, unconstrain product formation 
 %and set a minimal biomass formation
-tempModel = setParam(tempModel,'ub',modelParam.CUR_indx,0);
-tempModel = setParam(tempModel,'lb',modelParam.CUR_indx,-1000);
-tempModel = setParam(tempModel,'ub',modelParam.growth_indx,1000);
-tempModel = setParam(tempModel,'lb',modelParam.growth_indx,0.99*V_bio);
-tempModel = setParam(tempModel,'ub',modelParam.targetIndx,1000);
-tempModel = setParam(tempModel,'lb',modelParam.targetIndx,0);
+tempModel = setParam(tempModel,'ub',csRxn,0);
+tempModel = setParam(tempModel,'lb',csRxn,-1000);
+tempModel = setParam(tempModel,'ub',params.bioRxn,1000);
+tempModel = setParam(tempModel,'lb',params.bioRxn,0.99*V_bio);
+tempModel = setParam(tempModel,'ub',targetRxn,1000);
+tempModel = setParam(tempModel,'lb',targetRxn,0);
 %set Max product formation as objective function
-tempModel = setParam(tempModel,'obj',modelParam.targetIndx,+1);
+tempModel = setParam(tempModel,'obj',targetRxn,+1);
 %constrain enzyme usages with optimal biomass formation profile (WT)
 tempModel.lb(candidates.enz_pos(find(candidates.enz_pos))) = 1.01*candidates.maxUsageBio(find(candidates.enz_pos));
 tempModel.ub(candidates.enz_pos(find(candidates.enz_pos))) = 0.99*candidates.pUsageBio(find(candidates.enz_pos));
