@@ -1,6 +1,6 @@
-function [optStrain,remaining,step] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,output_dir,graphPlot,modelAdapter)
+function [optStrain,remaining,step] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,essential,output_dir,graphPlot,modelAdapter)
 
-if nargin < 8 || isempty(modelAdapter)
+if nargin < 9 || isempty(modelAdapter)
     modelAdapter = ModelAdapterManager.getDefault();
     if isempty(modelAdapter)
         error('Either send in a modelAdapter or set the default model adapter in the ModelAdapterManager.')
@@ -8,41 +8,49 @@ if nargin < 8 || isempty(modelAdapter)
 end
 params = modelAdapter.getParameters();
 
-if nargin < 7 || isempty(graphPlot)
+if nargin < 8 || isempty(graphPlot)
     graphPlot = false;
 end
 
-if nargin < 6 || isempty(output_dir)
+if nargin < 7 || isempty(output_dir)
     output_dir = fullfile(params.path,'output');
+end
+
+if nargin < 6 || isempty(essential)
+    % Read file with essential genes list
+    essential = readtable(fullfile(params.path,'data','essential_genes.txt'),'Delimiter','\t');
 end
 
 if ~exist(output_dir, 'dir')
     mkdir(output_dir)
 end
 
-%method parameters
+essential = strtrim(essential.Ids);
 
+% Parameters for FSEOF method
+nSteps     = 16; % number of FBA steps in ecFSEOF
+alphaLims  = [0.5*expYield 2*expYield]; % biomass yield limits for ecFSEOF
+file_genes = fullfile(output_dir,'ecFSEOF_genes.tsv');
+file_rxns  = fullfile(output_dir,'ecFSEOF_rxns.tsv');
+
+% Method parameters
 tol  = 1E-8;  %numeric tolerance for determining non-zero enzyme usages
 OEF  = 2;     %overexpression factor for enzyme targets
 KDF  = 0.5;   %down-regulation factor for enzyme targets
 step = 0;
-
-%Parameters for FSEOF method
-nSteps     = 16; %number of FBA steps in ecFSEOF
-alphaLims  = [0.5*expYield 2*expYield]; %biomass yield limits for ecFSEOF
 thresholds = [0.5 1.05]; %K-score thresholds for valid gene targets
 delLimit   = 0.05; %K-score limit for considering a target as deletion
 
-%read file with essential genes list
-essential = readtable(fullfile(params.path,'data','essential_genes.tsv'),'Delimiter','\t');
-essential = strtrim(essential.Ids);
-
-%Get relevant rxn indexes
+% Get relevant rxn indexes
 targetRxnIdx  = find(strcmpi(model.rxns, targetRxn));
 csRxnIdx    = find(strcmpi(model.rxns, csRxn));
 bioRxnIdx = find(strcmpi(model.rxns,params.bioRxn));
 
-%ecModel verification steps
+% perform FBA to determine uptake rate
+sol = solveLP(model);
+uptake = abs(sol.x(csRxnIdx));
+
+% ecModel verification steps
 % model = check_enzyme_fields(model); %% add mean MW to those that have
 % this missing
 if ~isempty(targetRxnIdx)
@@ -60,25 +68,25 @@ end
 
 % 1.- Run FSEOF to find gene candidates
 
-% mkdir('results')
 step = step+1;
 disp([num2str(step) '.-  **** Running ecFSEOF method (from GECKO utilities) ****'])
-results = run_ecFSEOF(model,targetRxn,csRxn,alphaLims,nSteps,file1,file2);
+results = run_ecFSEOF(model,targetRxn,csRxn,alphaLims,nSteps,file_genes,file_rxns);
 genes   = results.geneTable(:,1);
 disp('  ')
 disp(['ecFSEOF returned ' num2str(length(genes)) ' targets'])
 disp('  ')
+
 %Format results table
 geneShorts = results.geneTable(:,2);
 k_scores   = cell2mat(results.geneTable(:,3));
 actions    = cell(numel(k_scores),1);
-actions(k_scores>=thresholds(2)) = {'OE'};
-actions(k_scores<thresholds(1))  = {'KD'};
-actions(k_scores<delLimit) = {'KO'};
+actions(k_scores >= thresholds(2)) = {'OE'};
+actions(k_scores < thresholds(1))  = {'KD'};
+actions(k_scores < delLimit) = {'KO'};
 
 %Identify candidate genes in model enzymes
 disp(' Extracting enzymatic information for target genes')
-[~,iB]     = ismember(genes,model.ec.genes);
+[~,iB] = ismember(genes,model.ec.genes);
 MWeigths = [];
 candidates = {};
 pathways   = {};
@@ -151,13 +159,13 @@ step = step+1;
 disp([num2str(step) '.-  **** Running EUVA for optimal production conditions (minimal biomass) ****'])
 tempModel = model;
 disp(' ')
-disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
+disp(['  - Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake rate to ' num2str(uptake)])
 %Fix unit C source uptake
-tempModel.lb(csRxnIdx) = -(1+tol)*modelParam.CSusage;
-tempModel.ub(csRxnIdx) = -(1-tol)*modelParam.CSusage;
+tempModel.lb(csRxnIdx) = -(1+tol)*uptake;
+tempModel.ub(csRxnIdx) = -(1-tol)*uptake;
 disp('  - Fixed suboptimal biomass production, according to provided experimental yield')
 %Fix suboptimal experimental biomass yield conditions
-V_bio = expYield*csMW*modelParam.CSusage;
+V_bio = expYield*csMW*uptake;
 tempModel.lb(bioRxnIdx) = V_bio;
 disp(['    V_bio = ' num2str(V_bio) ' h-1'])
 disp('  - Production rate constrained to its maximum attainable value')
@@ -231,7 +239,7 @@ disp('  ')
 step = step+1;
 disp('  ')
 disp([num2str(step) '.-  **** Running EUVA for reference strain  ****'])
-disp(['  - Fixed ' erase(modelParam.CSname, ' exchange (reversible)') ' uptake rate to ' num2str(modelParam.CSusage)])
+disp(['  - Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake rate to ' num2str(uptake)])
 disp('  - Production rate subject to a LB of 1% of its max. value')
 disp('  - Biomass production fixed to its maximum attainable value')
 tempModel = setParam(tempModel, 'obj', params.bioRxn, +1);
