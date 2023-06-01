@@ -1,11 +1,23 @@
-function [optStrain,remaining,step] = run_ecFactory(model,modelParam,expYield,results_folder,graphPlot)
+function [optStrain,remaining,step] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,output_dir,graphPlot,modelAdapter)
 
-if nargin < 5
+if nargin < 8 || isempty(modelAdapter)
+    modelAdapter = ModelAdapterManager.getDefault();
+    if isempty(modelAdapter)
+        error('Either send in a modelAdapter or set the default model adapter in the ModelAdapterManager.')
+    end
+end
+params = modelAdapter.getParameters();
+
+if nargin < 7 || isempty(graphPlot)
     graphPlot = false;
 end
 
-if ~exist(results_folder, 'dir')
-    mkdir(results_folder)
+if nargin < 6 || isempty(output_dir)
+    output_dir = fullfile(params.path,'output');
+end
+
+if ~exist(output_dir, 'dir')
+    mkdir(output_dir)
 end
 
 %method parameters
@@ -16,7 +28,7 @@ KDF  = 0.5;   %down-regulation factor for enzyme targets
 step = 0;
 
 %Parameters for FSEOF method
-Nsteps     = 16; %number of FBA steps in ecFSEOF
+nSteps     = 16; %number of FBA steps in ecFSEOF
 alphaLims  = [0.5*expYield 2*expYield]; %biomass yield limits for ecFSEOF
 thresholds = [0.5 1.05]; %K-score thresholds for valid gene targets
 delLimit   = 0.05; %K-score limit for considering a target as deletion
@@ -45,16 +57,14 @@ if ~isempty(modelParam.targetIndx)
 else
     error('The provided target reaction is not part of the ecModel.rxns field')
 end
-%output files for genes and rxn targets
-file1   = fullfile(results_folder, 'genesResults_ecFSEOF.txt');
-file2   = fullfile(results_folder, 'rxnsResults_ecFSEOF.txt');
+
 
 % 1.- Run FSEOF to find gene candidates
 
 % mkdir('results')
 step = step+1;
 disp([num2str(step) '.-  **** Running ecFSEOF method (from GECKO utilities) ****'])
-results = run_ecFSEOF(model,modelParam.rxnTarget,modelParam.CSrxn,alphaLims,Nsteps,file1,file2);
+results = run_ecFSEOF(model,modelParam.rxnTarget,modelParam.CSrxn,alphaLims,nSteps,file1,file2);
 genes   = results.geneTable(:,1);
 disp('  ')
 disp(['ecFSEOF returned ' num2str(length(genes)) ' targets'])
@@ -112,7 +122,7 @@ toRemove  = iB & candidates.k_scores<=delLimit;
 candidates(toRemove,:) = [];
 disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
 disp('  ')
-writetable(candidates,fullfile(results_folder, 'candidates_L1.txt'),'Delimiter','\t','QuoteStrings',false);
+writetable(candidates,fullfile(output_dir, 'candidates_L1.txt'),'Delimiter','\t','QuoteStrings',false);
 proteins = strcat('usage_prot_',candidates.enzymes);
 [~,enz_pos] = ismember(proteins,model.rxns);
 candidates.enz_pos = enz_pos;
@@ -273,7 +283,7 @@ ratios   = candidates.pUsage./candidates.pUsageBio;
 idxs     = ratios < bioRatio+1E-9 & ratios > bioRatio-1E-9;
 candidates.EV_type(idxs) = {'biomass_coupled'};
 disp(' ')
-writetable(candidates,fullfile(results_folder, 'candidates_L2.txt'),'Delimiter','\t','QuoteStrings',false);
+writetable(candidates,fullfile(output_dir, 'candidates_L2.txt'),'Delimiter','\t','QuoteStrings',false);
 % 8.- Combine targets
 step = step+1;
 disp([num2str(step) '.-  **** Find an optimal combination of remaining targets ****'])
@@ -306,7 +316,7 @@ disp([' * The predicted optimal strain contains ' num2str(height(remaining)) ' g
 disp(' ')
 
 
-writetable(remaining,fullfile(results_folder, 'candidates_L3.txt'),'Delimiter','\t','QuoteStrings',false);
+writetable(remaining,fullfile(output_dir, 'candidates_L3.txt'),'Delimiter','\t','QuoteStrings',false);
 %Generate transporter targets file (lists a number of transport steps
 %with no enzymatic annotation that are relevant for enhancing target
 %product formation.
@@ -319,7 +329,7 @@ rxnsTable     = readtable(file2,'Delimiter','\t');
 transpTargets = getTransportTargets(rxnsTable,tempModel);
 disp([' * ' num2str(height(transpTargets)) ' transport reaction targets were found']) 
 disp(' ')
-writetable(transpTargets,fullfile(results_folder, 'transporter_targets.txt'),'Delimiter','\t','QuoteStrings',false);
+writetable(transpTargets,fullfile(output_dir, 'transporter_targets.txt'),'Delimiter','\t','QuoteStrings',false);
 delete(file1)
 delete(file2)
 end
