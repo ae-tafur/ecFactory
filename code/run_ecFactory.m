@@ -1,4 +1,4 @@
-function [optStrain,remaining,step] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,essential,output_dir,graphPlot,modelAdapter)
+function [optStrain,remaining] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,essential,output_dir,graphPlot,modelAdapter)
 
 if nargin < 9 || isempty(modelAdapter)
     modelAdapter = ModelAdapterManager.getDefault();
@@ -37,7 +37,6 @@ file_rxns  = fullfile(output_dir,'ecFSEOF_rxns.tsv');
 tol  = 1E-8;  %numeric tolerance for determining non-zero enzyme usages
 OEF  = 2;     %overexpression factor for enzyme targets
 KDF  = 0.5;   %down-regulation factor for enzyme targets
-step = 0;
 thresholds = [0.5 1.05]; %K-score thresholds for valid gene targets
 delLimit   = 0.05; %K-score limit for considering a target as deletion
 
@@ -68,13 +67,10 @@ end
 
 % 1.- Run FSEOF to find gene candidates
 
-step = step+1;
-disp([num2str(step) '.-  **** Running ecFSEOF method (from GECKO utilities) ****'])
+fprintf('\n1.- **** Running ecFSEOF method (from GECKO utilities) **** \n\n')
 results = run_ecFSEOF(model,targetRxn,csRxn,alphaLims,nSteps,file_genes,file_rxns);
 genes   = results.geneTable(:,1);
-disp('  ')
-disp(['ecFSEOF returned ' num2str(length(genes)) ' targets'])
-disp('  ')
+fprintf(['\n  ecFSEOF returned ' num2str(length(genes)) ' targets \n'])
 
 %Format results table
 geneShorts = results.geneTable(:,2);
@@ -85,7 +81,7 @@ actions(k_scores < thresholds(1))  = {'KD'};
 actions(k_scores < delLimit) = {'KO'};
 
 %Identify candidate genes in model enzymes
-disp(' Extracting enzymatic information for target genes')
+fprintf('\n  Extracting enzymatic information for target genes \n')
 [~,iB] = ismember(genes,model.ec.genes);
 MWeigths = [];
 candidates = {};
@@ -102,48 +98,41 @@ for i=1:numel(iB)
         pathways   = [pathways; {''}]; 
     end
 end
-disp('  ')
+
 %Get results table
 candidates = table(genes,candidates,geneShorts,MWeigths,pathways,actions,k_scores,'VariableNames',{'genes' 'enzymes' 'shortNames' 'MWs' 'pathways' 'actions' 'k_scores'});
 %Keep results that comply with the specified K-score thresholds
-disp(['Removing targets ' num2str(thresholds(1)) ' < K_score < ' num2str(thresholds(2))])
+fprintf(['\n  Removing targets ' num2str(thresholds(1)) ' < K_score < ' num2str(thresholds(2)) '\n'])
 toKeep     = find((candidates.k_scores>=thresholds(2)|candidates.k_scores<=thresholds(1)));
 candidates = candidates(toKeep,:);
-disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
-disp('  ')
+fprintf(['\n    * ' num2str(height(candidates)) ' gene targets remain \n']) 
 
 %2.- Add flux leak targets (those genes not optimal for production that may
 %consume the product of interest. (probaly extend the approach to inmediate
 %precurssors)
-step = step+1;
-
-disp([num2str(step) '.-  **** Find flux leak targets to block ****'])
+fprintf('\n2.- **** Find flux leak targets to block **** \n\n')
 candidates = find_flux_leaks(candidates,targetRxnIdx,model);
-disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
-disp('  ')
+fprintf(['\n    * ' num2str(height(candidates)) ' gene targets remain \n']) 
+
 % 3.- discard essential genes from deletion targets
-step = step+1;
-disp([num2str(step) '.-  **** Removing essential genes from KD and KO targets list ****'])
+fprintf('\n3.- **** Removing essential genes from KD and KO targets list **** \n')
 [~,iB]    = ismember(candidates.genes,essential);
 toRemove  = iB & candidates.k_scores<=delLimit;
 candidates(toRemove,:) = [];
-disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
-disp('  ')
+fprintf(['\n    * ' num2str(height(candidates)) ' gene targets remain \n'])
 writetable(candidates,fullfile(output_dir, 'candidates_L1.txt'),'Delimiter','\t','QuoteStrings',false);
 proteins = strcat('usage_prot_',candidates.enzymes);
 [~,enz_pos] = ismember(proteins,model.rxns);
 candidates.enz_pos = enz_pos;
+
 % 4.- Construct Genes-metabolites network for classification of targets
-step = step+1;
-disp([num2str(step) '.-  **** Construct Genes-metabolites network for classification of targets ****'])
-disp('  ')
+fprintf('\n4.- **** Construct Genes-metabolites network for classification of targets **** \n')
 %Get Genes-metabolites network
-disp('  Constructing genes-metabolites graph')
-disp('  ')
+fprintf('\n  Constructing genes-metabolites graph \n')
 [GeneMetMatrix,~,Gconect] = getMetGeneMatrix(model,candidates.genes);
 %Get independent genes from GeneMetMatrix
-disp('  Obtain redundant vectors in genes-metabolites graph (redundant targets)')
-disp('  ')
+fprintf('\n  Obtain redundant vectors in genes-metabolites graph (redundant targets) \n')
+
 %generate gene-gene matrix and identify linearly independent targets
 [indGenes,G2Gmatrix,~] = getGeneDepMatrix(GeneMetMatrix);
 %find unique targets (with no isoenzymes or not part of complexes)
@@ -155,38 +144,30 @@ candidates.conectivity = Gconect.mets_number;
 candidates.groups = groups;
 
 % 5.- Enzyme usage variability analysis (EVA) and prioritization of targets
-step = step+1;
-disp([num2str(step) '.-  **** Running EUVA for optimal production conditions (minimal biomass) ****'])
+fprintf('\n5.- **** Running EUVA for optimal production conditions (minimal biomass) **** \n')
 tempModel = model;
-disp(' ')
-disp(['  - Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake rate to ' num2str(uptake)])
+fprintf(['\n    * Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake rate to ' num2str(uptake) '\n'])
 %Fix unit C source uptake
-tempModel.lb(csRxnIdx) = -(1+tol)*uptake;
-tempModel.ub(csRxnIdx) = -(1-tol)*uptake;
-disp('  - Fixed suboptimal biomass production, according to provided experimental yield')
+tempModel = setParam(tempModel, 'var', csRxn, -uptake, tol);
+fprintf('    * Fixed suboptimal biomass production, according to provided experimental yield.')
 %Fix suboptimal experimental biomass yield conditions
 V_bio = expYield*csMW*uptake;
 tempModel.lb(bioRxnIdx) = V_bio;
-disp(['    V_bio = ' num2str(V_bio) ' h-1'])
-disp('  - Production rate constrained to its maximum attainable value')
+fprintf([' V_bio = ' num2str(V_bio) ' h-1 \n'])
+fprintf('    * Production rate constrained to its maximum attainable value.')
 %Get and fix optimal production rate
 tempModel = setParam(tempModel, 'obj', targetRxn, +1);
 sol       = solveLP(tempModel,1);
-max_prod   = sol.x(targetRxnIdx);
-tempModel.lb(targetRxnIdx) = (1-tol)*max_prod;
-tempModel.ub(targetRxnIdx) = (1+tol)*max_prod;
-disp(['    V_prod_max = ' num2str(max_prod) ' mmol/gDwh'])
-modelParam.WT_prod = max_prod;
-modelParam.V_bio   = V_bio;
+max_prod  = sol.x(targetRxnIdx);
+tempModel = setParam(tempModel, 'var', targetRxn, max_prod, tol);
+fprintf([' V_prod_max = ' num2str(max_prod) ' mmol/gDW/h \n'])
 
-disp(' ')
 %Run FVA for all enzyme usages subject to fixed CUR and Grates
 EVAtable = enzymeUsage_FVA(tempModel,candidates.enzymes);
 
-disp('* Discard targets according to EUVA results for optimal production ****')
+fprintf('\n  Discard targets according to EUVA results for optimal production **** \n')
 %Classify targets according to enzyme variability ranges
 candidateUsages = EVAtable.pU;
-disp('  ')
 candidates.EV_type = cell(height(candidates),1);
 candidates.EV_type(:) = {''};
 idxs = find(EVAtable.minU<=tol & EVAtable.maxU<=tol);
@@ -211,14 +192,14 @@ candidates.minUsage = EVAtable.minU;
 candidates.maxUsage = EVAtable.maxU;
 candidates.pUsage   = candidateUsages;
 %Discard enzymes 
-disp('  - Discard OE targets with lb=ub=0')
+fprintf('    * Discard OE targets with lb=ub=0 \n')
 toRemove = (strcmpi(candidates.EV_type,'unusable') & strcmpi(candidates.actions,'OE')) | isnan(candidates.minUsage);
 candidates(toRemove,:) = [];
-disp('  - Discard enzymes essential for production from deletion targets')
+fprintf('    * Discard enzymes essential for production from deletion targets \n')
 toRemove = (strcmpi(candidates.EV_type,'essential_tightly_const') | strcmpi(candidates.EV_type,'essential')) & ...
        (candidates.k_scores<=delLimit);
 candidates(toRemove,:) = [];       
-disp('  - Discard isoenzyme groups for KD/KO that contain an optimal isoform (redundant groups that increase mutant complexity)')
+fprintf('    * Discard isoenzyme groups for KD/KO that contain an optimal isoform (redundant groups that increase mutant complexity) \n')
 toRemove = [];
 for k=1:max(candidates.groups)
     idx = find(candidates.groups==k & ~strcmpi(candidates.actions,'OE'));
@@ -229,19 +210,15 @@ for k=1:max(candidates.groups)
     end
 end
 candidates(toRemove,:) = [];
-disp('  ')
-disp([' * ' num2str(height(candidates)) ' gene targets remain']) 
-disp('  ')
+fprintf(['\n    * ' num2str(height(candidates)) ' gene targets remain \n'])
 
-%7.- EUVA for suboptimal biomasss production subject to a minimal (1%)
+%6.- EUVA for suboptimal biomasss production subject to a minimal (1%)
 % production rate of the target product and a unit CS uptake rate
 %Get max biomass 
-step = step+1;
-disp('  ')
-disp([num2str(step) '.-  **** Running EUVA for reference strain  ****'])
-disp(['  - Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake rate to ' num2str(uptake)])
-disp('  - Production rate subject to a LB of 1% of its max. value')
-disp('  - Biomass production fixed to its maximum attainable value')
+fprintf('\n6.-  **** Running EUVA for reference strain  **** \n')
+fprintf(['    * Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake rate to ' num2str(uptake) '\n'])
+fprintf('    * Production rate subject to a LB of 1%% of its max. value \n')
+fprintf('    * Biomass production fixed to its maximum attainable value \n')
 tempModel = setParam(tempModel, 'obj', params.bioRxn, +1);
 tempModel.lb(targetRxnIdx) = 0.01*max_prod;
 tempModel.ub(targetRxnIdx) = 1000;
@@ -255,46 +232,41 @@ EVAbio = enzymeUsage_FVA(tempModel,candidates.enzymes);
 candidates.minUsageBio = EVAbio.minU;
 candidates.maxUsageBio = EVAbio.maxU;
 candidates.pUsageBio   = EVAbio.pU;
-disp(' ')
+
 %discard something 
-disp('* Discard targets according to EUVA results for reference strain ****')
+fprintf('\n  Discard targets according to EUVA results for reference strain **** \n')
 candidates = compare_EUVR(candidates);
-disp('  - Discarding enzymes with inconsistent enzyme usage variability patterns')
+fprintf('    * Discarding enzymes with inconsistent enzyme usage variability patterns')
 toRemove = strcmpi(candidates.EUV_comparison,'embedded') | ...
            (~strcmpi(candidates.actions,'OE') & contains(candidates.EUV_comparison,'up_')) | ...
            (strcmpi(candidates.actions,'OE') & contains(candidates.EUV_comparison,'down_'));% |...
 %disp(candidates(toRemove,:))
 candidates(toRemove,:) = [];
-disp(' ')
-disp([' ' num2str(height(candidates)) ' gene targets remain']) 
-disp(' ')
+fprintf(['\n    * ' num2str(height(candidates)) ' gene targets remain \n'])
 
-step = step+1;
-disp([num2str(step) '.-  **** Rank targets by priority levels ****'])
-disp(' ')
+%7.-
+fprintf('\n7.-  **** Rank targets by priority levels **** \n\n')
 %Rank targets by priority
 candidates.priority = zeros(height(candidates),1)+3;
 candidates.priority(contains(candidates.EUV_comparison,'up_') | contains(candidates.EUV_comparison,'down_')) = 2; % second priority for genes with overlaped demand ranges
 candidates.priority(contains(candidates.EUV_comparison,'_distinct')) = 1; %higher priority to the clearly up-down regulated genes
-disp(['  - ' num2str(sum(candidates.priority==1)) ' targets with priority level 1 (distinct enzyme demand levels between optimal production and optimal biomass cases)']) 
-disp(['  - ' num2str(sum(candidates.priority==2)) ' targets with priority level 2 (overlapped enzyme demand levels between optimal production and optimal biomass cases)']) 
-disp(['  - ' num2str(sum(candidates.priority==3)) ' targets with priority level 3 (other cases)']) 
-disp(' ')
+fprintf(['    * ' num2str(sum(candidates.priority==1)) ' targets with priority level 1 (distinct enzyme demand levels between optimal production and optimal biomass cases) \n']) 
+fprintf(['    * ' num2str(sum(candidates.priority==2)) ' targets with priority level 2 (overlapped enzyme demand levels between optimal production and optimal biomass cases) \n']) 
+fprintf(['    * ' num2str(sum(candidates.priority==3)) ' targets with priority level 3 (other cases) \n']) 
+
 %Rename enzyme variability type for KDs and KOs according to their
 %variability ranges for maximum biomass production
-disp(' * Classifying targets according to their enzyme usage variability range type')
+fprintf('\n Classifying targets according to their enzyme usage variability range type \n')
 idxs = ~strcmpi(candidates.actions,'OE') & candidates.pUsage < candidates.pUsageBio & candidates.pUsageBio>0 & ~contains(candidates.EV_type,'unnecessary');
 candidates.EV_type(idxs) = {'biomass_opt'};
 bioRatio = V_bio/maxVBio;
 ratios   = candidates.pUsage./candidates.pUsageBio;
 idxs     = ratios < bioRatio+1E-9 & ratios > bioRatio-1E-9;
 candidates.EV_type(idxs) = {'biomass_coupled'};
-disp(' ')
 writetable(candidates,fullfile(output_dir, 'candidates_L2.txt'),'Delimiter','\t','QuoteStrings',false);
+
 % 8.- Combine targets
-step = step+1;
-disp([num2str(step) '.-  **** Find an optimal combination of remaining targets ****'])
-disp(' ')
+fprintf('\n8.-  **** Find an optimal combination of remaining targets **** \n')
 %Unconstrain CUR, unconstrain product formation 
 %and set a minimal biomass formation
 tempModel = setParam(tempModel,'ub',csRxn,0);
@@ -319,23 +291,18 @@ if graphPlot
     tempGMmatrix = GeneMetMatrix(:,toKeep);
     getMGgraph(tempGMmatrix,nodeMets,tempModel,'force',remaining(toKeep,:));
 end
-disp([' * The predicted optimal strain contains ' num2str(height(remaining)) ' gene modifications']) 
-disp(' ')
-
+fprintf(['\n    * The predicted optimal strain contains ' num2str(height(remaining)) ' gene modifications \n']) 
 
 writetable(remaining,fullfile(output_dir, 'candidates_L3.txt'),'Delimiter','\t','QuoteStrings',false);
-%Generate transporter targets file (lists a number of transport steps
-%with no enzymatic annotation that are relevant for enhancing target
-%product formation.
-% origin = 'GECKO/geckomat/utilities/ecFSEOF/results/*';
-% copyfile(origin,results_folder)
-step = step+1;
-disp([num2str(step) '.-  **** Find transporter reactions with no enzyme association predicted as targets by ecFSEOF ****'])
-disp(' ')
+
+% 9. Generate transporter targets file (lists a number of transport steps
+% with no enzymatic annotation that are relevant for enhancing target
+% product formation.
+
+fprintf('\n9.-  **** Find transporter reactions with no enzyme association predicted as targets by ecFSEOF **** \n')
 rxnsTable     = readtable(file2,'Delimiter','\t');
 transpTargets = getTransportTargets(rxnsTable,tempModel);
-disp([' * ' num2str(height(transpTargets)) ' transport reaction targets were found']) 
-disp(' ')
+fprintf(['\n    * ' num2str(height(transpTargets)) ' transport reaction targets were found \n']) 
 writetable(transpTargets,fullfile(output_dir, 'transporter_targets.txt'),'Delimiter','\t','QuoteStrings',false);
 delete(file1)
 delete(file2)
