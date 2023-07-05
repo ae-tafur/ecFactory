@@ -24,6 +24,7 @@ enz_pUsgs = zeros(length(enzymes),1);
 enzIDs    = cell(length(enzymes),1);
 if ~isempty(sol.x)
     pUsgs = sol.x(prot_indxs);
+    pUsgs(abs(pUsgs) < 1e-8) = 0;
     %Loop through all the provided enzymes
     for i=1:length(enzymes)
         if ~isempty(enzymes{i})
@@ -36,14 +37,16 @@ if ~isempty(sol.x)
             if ~isempty(enzIndx)
                 model  = setParam(model, 'obj', rxnIndx, -1);
                 sol    = solveLP(model);
-                pUsage = pUsgs(enzIndx);
                 if ~isempty(sol.f)
                     minFlux = sol.x(rxnIndx);
+                    minFlux(abs(minFlux) < 1e-8) = 0;
                     model   = setParam(model, 'obj', rxnIndx, +1);
                     sol     = solveLP(model);
                     if ~isempty(sol.f)
                         %disp(['Ready with enzyme #' num2str(i) ' ' model.enzymes{enzIndx}])
                         maxFlux = sol.x(rxnIndx);
+                        maxFlux(abs(maxFlux) < 1e-8) = 0;
+                        pUsage = pUsgs(enzIndx);
                     end
                 end
                 ranges(i)    = (maxFlux-minFlux);

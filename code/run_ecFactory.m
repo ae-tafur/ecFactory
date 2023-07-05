@@ -45,8 +45,8 @@ file1   = fullfile(resultsPath, 'genesResults_ecFSEOF.txt');
 file2   = fullfile(resultsPath, 'rxnsResults_ecFSEOF.txt');
 
 % 1.- Run FSEOF to find gene candidates
-cd(fullfile(geckoPath,"utilities","ecFSEOF"))
-% mkdir('results')
+cd(fullfile(geckoPath, 'geckomat', 'utilities', 'ecFSEOF'))
+
 step = step+1;
 disp([num2str(step) '.-  **** Running ecFSEOF method (from GECKO utilities) ****'])
 results = run_ecFSEOF(model,modelParam.rxnTarget,modelParam.CSrxn,alphaLims,Nsteps,file1,file2);
