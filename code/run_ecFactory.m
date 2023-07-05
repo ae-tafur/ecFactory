@@ -83,24 +83,21 @@ actions(k_scores < delLimit) = {'KO'};
 %Identify candidate genes in model enzymes
 fprintf('\n  Extracting enzymatic information for target genes \n')
 [~,iB] = ismember(genes,model.ec.genes);
-MWeigths = [];
-candidates = {};
-pathways   = {};
+MWeigths = nan(numel(iB),1);
+candidates = cell(numel(iB),1);
+pathways   = cell(numel(iB),1);
 %optimize!
 for i=1:numel(iB)
     if iB(i)>0
-        candidates = [candidates; model.ec.enzymes(iB(i))];
-        MWeigths   = [MWeigths; model.ec.mw(iB(i))];
-        pathways   = [pathways; model.subSystems(iB(i))]; %% revisar
-    else
-        candidates = [candidates; {''}];
-        MWeigths   = [MWeigths; nan];
-        pathways   = [pathways; {''}]; 
+        candidates(i) = model.ec.enzymes(iB(i));
+        MWeigths(i)   = model.ec.mw(iB(i));
+        % pathways(i)   = model.subSystems(iB(i)); %% revisar
     end
 end
 
 %Get results table
-candidates = table(genes,candidates,geneShorts,MWeigths,pathways,actions,k_scores,'VariableNames',{'genes' 'enzymes' 'shortNames' 'MWs' 'pathways' 'actions' 'k_scores'});
+candidates = table(genes,candidates,geneShorts,MWeigths,pathways,actions,k_scores, ...
+    'VariableNames',{'genes' 'enzymes' 'shortNames' 'MWs' 'pathways' 'actions' 'k_scores'});
 %Keep results that comply with the specified K-score thresholds
 fprintf(['\n  Removing targets ' num2str(thresholds(1)) ' < K_score < ' num2str(thresholds(2)) '\n'])
 toKeep     = find((candidates.k_scores>=thresholds(2)|candidates.k_scores<=thresholds(1)));

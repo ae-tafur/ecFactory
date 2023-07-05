@@ -1,4 +1,4 @@
-function candidates = block_leaks(candidates,targetIdx,model)
+function candidates = find_flux_leaks(candidates,targetIdx,model)
 %assuming that all models have an exchange reaction as objective
 met    = model.metNames(find(model.S(:,targetIdx)));
 cytIdx = find(strcmpi(model.compNames,'cytoplasm'));
