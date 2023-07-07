@@ -1,4 +1,4 @@
-function [optStrain,remaining] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,essential,output_dir,graphPlot,modelAdapter)
+function [optStrain,remaining] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,essential,outputPath,graphPlot,modelAdapter)
 
 if nargin < 9 || isempty(modelAdapter)
     modelAdapter = ModelAdapterManager.getDefault();
@@ -12,8 +12,8 @@ if nargin < 8 || isempty(graphPlot)
     graphPlot = false;
 end
 
-if nargin < 7 || isempty(output_dir)
-    output_dir = fullfile(params.path,'output');
+if nargin < 7 || isempty(outputPath)
+    outputPath = fullfile(params.path,'output');
 end
 
 if nargin < 6 || isempty(essential)
@@ -21,8 +21,8 @@ if nargin < 6 || isempty(essential)
     essential = readtable(fullfile(params.path,'data','essential_genes.txt'),'Delimiter','\t');
 end
 
-if ~exist(output_dir, 'dir')
-    mkdir(output_dir)
+if ~exist(outputPath, 'dir')
+    mkdir(outputPath)
 end
 
 essential = strtrim(essential.Ids);
@@ -30,8 +30,8 @@ essential = strtrim(essential.Ids);
 % Parameters for FSEOF method
 nSteps     = 16; % number of FBA steps in ecFSEOF
 alphaLims  = [0.5*expYield 2*expYield]; % biomass yield limits for ecFSEOF
-file_genes = fullfile(output_dir,'ecFSEOF_genes.tsv');
-file_rxns  = fullfile(output_dir,'ecFSEOF_rxns.tsv');
+file_genes = fullfile(outputPath,'ecFSEOF_genes.tsv');
+file_rxns  = fullfile(outputPath,'ecFSEOF_rxns.tsv');
 
 % Method parameters
 tol  = 1E-8;  %numeric tolerance for determining non-zero enzyme usages
@@ -41,9 +41,9 @@ thresholds = [0.5 1.05]; %K-score thresholds for valid gene targets
 delLimit   = 0.05; %K-score limit for considering a target as deletion
 
 % Get relevant rxn indexes
-targetRxnIdx  = find(strcmpi(model.rxns, targetRxn));
-csRxnIdx    = find(strcmpi(model.rxns, csRxn));
-bioRxnIdx = find(strcmpi(model.rxns,params.bioRxn));
+targetRxnIdx = getIndexes(model, targetRxn,'rxns');
+csRxnIdx = getIndexes(model, csRxn,'rxns');
+bioRxnIdx = getIndexes(model, params.bioRxn,'rxns');
 
 % perform FBA to determine uptake rate
 sol = solveLP(model);
@@ -54,12 +54,12 @@ uptake = abs(sol.x(csRxnIdx));
 % this missing
 if ~isempty(targetRxnIdx)
     %Check if model can carry flux for the target rxn
-    % flux = haveFlux(model,1-12,targetRxn); [~, maxFluxes, ~] = getAllowedBounds(model, targetRxn);
-    % if flux
-    %     disp(['* Your ecModel can carry flux through the reaction: ' model.rxnNames{targetRxnIdx}])
-    % else
-    %     disp(['* Your ecModel cannot carry flux through the reaction: ' model.rxnNames{targetRxnIdx} ', please check the applied constraints'])
-    % end
+    [~, maxFlux, ~] = getAllowedBounds(model, targetRxn);
+    if maxFlux
+        disp(['* Your ecModel can carry flux through the reaction: ' model.rxnNames{targetRxnIdx}])
+    else
+        disp(['* Your ecModel cannot carry flux through the reaction: ' model.rxnNames{targetRxnIdx} ', please check the applied constraints'])
+    end
 else
     error('The provided target reaction is not part of the ecModel.rxns field')
 end
@@ -117,7 +117,7 @@ fprintf('\n3.- **** Removing essential genes from KD and KO targets list **** \n
 toRemove  = iB & candidates.k_scores<=delLimit;
 candidates(toRemove,:) = [];
 fprintf(['\n    * ' num2str(height(candidates)) ' gene targets remain \n'])
-writetable(candidates,fullfile(output_dir, 'candidates_L1.txt'),'Delimiter','\t','QuoteStrings',false);
+writetable(candidates,fullfile(outputPath, 'candidates_L1.txt'),'Delimiter','\t','QuoteStrings',false);
 proteins = strcat('usage_prot_',candidates.enzymes);
 [~,enz_pos] = ismember(proteins,model.rxns);
 candidates.enz_pos = enz_pos;
@@ -148,7 +148,7 @@ fprintf(['\n    * Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake 
 tempModel = setParam(tempModel, 'var', csRxn, -uptake, tol);
 fprintf('    * Fixed suboptimal biomass production, according to provided experimental yield.')
 %Fix suboptimal experimental biomass yield conditions
-V_bio = expYield*csMW*uptake;
+V_bio = expYield*csMW;
 tempModel.lb(bioRxnIdx) = V_bio;
 fprintf([' V_bio = ' num2str(V_bio) ' h-1 \n'])
 fprintf('    * Production rate constrained to its maximum attainable value.')
@@ -164,20 +164,20 @@ EVAtable = enzymeUsage_FVA(tempModel,candidates.enzymes);
 
 fprintf('\n  Discard targets according to EUVA results for optimal production **** \n')
 %Classify targets according to enzyme variability ranges
-candidateUsages = EVAtable.pU;
+candidateUsages = EVAtable.enzUsage;
 candidates.EV_type = cell(height(candidates),1);
 candidates.EV_type(:) = {''};
-idxs = find(EVAtable.minU<=tol & EVAtable.maxU<=tol);
+idxs = find(EVAtable.minUsage<=tol & EVAtable.maxUsage<=tol);
 candidates.EV_type(idxs) = {'unusable'};
-idxs = find(EVAtable.minU>tol);
+idxs = find(EVAtable.minUsage>tol);
 candidates.EV_type(idxs) = {'essential'}; %enzymes needed for optimal production
-idxs = find(EVAtable.minU<=tol & EVAtable.maxU>tol);
+idxs = find(EVAtable.minUsage<=tol & EVAtable.maxUsage>tol);
 candidates.EV_type(idxs) = {'totally_variable'}; %enzymes that can take any flux (ussually isoenzymes)
-idxs = find((EVAtable.minU./EVAtable.maxU)>=0.99 & EVAtable.minU>tol);
+idxs = find((EVAtable.minUsage./EVAtable.maxUsage)>=0.99 & EVAtable.minUsage>tol);
 candidates.EV_type(idxs) = {'essential_tightly_const'}; %enzymes that are needed up to its maximum capacity
 idxs = find(strcmpi(candidates.EV_type,'totally_variable') & candidateUsages>tol);
 candidates.EV_type(idxs) = {'production_opt'};  %isoenzymes that are chosen for optimal production 
-idxs = find(strcmpi(candidates.EV_type,'production_opt') & (candidateUsages./EVAtable.maxU)>=0.99);
+idxs = find(strcmpi(candidates.EV_type,'production_opt') & (candidateUsages./EVAtable.maxUsage)>=0.99);
 candidates.EV_type(idxs) = {'production_opt_tight'}; %isoenzymes that are chosen for optimal production, up to its maximum capacity
 idxs = find(strcmpi(candidates.EV_type,'totally_variable') & candidateUsages<=tol);
 candidates.EV_type(idxs) = {'unnecessary_prod'}; %isoenzymes that are not chosen for optimal production
@@ -185,9 +185,9 @@ candidates.EV_type(idxs) = {'unnecessary_prod'}; %isoenzymes that are not chosen
 candidates.OE(strcmpi(candidates.actions,'OE')) = OEF;
 candidates.OE(strcmpi(candidates.actions,'KD')) = KDF;
 candidates.OE(strcmpi(candidates.actions,'KO')) = 0;
-candidates.minUsage = EVAtable.minU;
-candidates.maxUsage = EVAtable.maxU;
-candidates.pUsage   = candidateUsages;
+candidates.minUsage = EVAtable.minUsage;
+candidates.maxUsage = EVAtable.maxUsage;
+candidates.enzUsage = candidateUsages;
 %Discard enzymes 
 fprintf('    * Discard OE targets with lb=ub=0 \n')
 toRemove = (strcmpi(candidates.EV_type,'unusable') & strcmpi(candidates.actions,'OE')) | isnan(candidates.minUsage);
@@ -201,7 +201,7 @@ toRemove = [];
 for k=1:max(candidates.groups)
     idx = find(candidates.groups==k & ~strcmpi(candidates.actions,'OE'));
     if length(idx)>1
-        if ~isempty(candidates.enzymes(idx(1))) & any(candidates.pUsage(idx)>0)
+        if ~isempty(candidates.enzymes(idx(1))) & any(candidates.enzUsage(idx)>0)
             toRemove = [toRemove;idx];
         end
     end
@@ -222,13 +222,12 @@ tempModel.ub(targetRxnIdx) = 1000;
 sol       = solveLP(tempModel,1);
 maxVBio   = sol.x(bioRxnIdx);
 %Fix optimal biomass formation rate
-tempModel.lb(bioRxnIdx) = (1-tol)*maxVBio;
-tempModel.ub(bioRxnIdx) = (1+tol)*maxVBio;
+tempModel = setParam(tempModel, 'var', params.bioRxn, maxVBio, tol);
 %run EUVA for optimal biomass formation
 EVAbio = enzymeUsage_FVA(tempModel,candidates.enzymes);
-candidates.minUsageBio = EVAbio.minU;
-candidates.maxUsageBio = EVAbio.maxU;
-candidates.pUsageBio   = EVAbio.pU;
+candidates.minUsageBio = EVAbio.minUsage;
+candidates.maxUsageBio = EVAbio.maxUsage;
+candidates.enzUsageBio = EVAbio.enzUsage;
 
 %discard something 
 fprintf('\n  Discard targets according to EUVA results for reference strain **** \n')
@@ -254,13 +253,13 @@ fprintf(['    * ' num2str(sum(candidates.priority==3)) ' targets with priority l
 %Rename enzyme variability type for KDs and KOs according to their
 %variability ranges for maximum biomass production
 fprintf('\n Classifying targets according to their enzyme usage variability range type \n')
-idxs = ~strcmpi(candidates.actions,'OE') & candidates.pUsage < candidates.pUsageBio & candidates.pUsageBio>0 & ~contains(candidates.EV_type,'unnecessary');
+idxs = ~strcmpi(candidates.actions,'OE') & candidates.enzUsage < candidates.enzUsageBio & candidates.enzUsageBio>0 & ~contains(candidates.EV_type,'unnecessary');
 candidates.EV_type(idxs) = {'biomass_opt'};
 bioRatio = V_bio/maxVBio;
-ratios   = candidates.pUsage./candidates.pUsageBio;
+ratios   = candidates.enzUsage./candidates.enzUsageBio;
 idxs     = ratios < bioRatio+1E-9 & ratios > bioRatio-1E-9;
 candidates.EV_type(idxs) = {'biomass_coupled'};
-writetable(candidates,fullfile(output_dir, 'candidates_L2.txt'),'Delimiter','\t','QuoteStrings',false);
+writetable(candidates,fullfile(outputPath, 'candidates_L2.txt'),'Delimiter','\t','QuoteStrings',false);
 
 % 8.- Combine targets
 fprintf('\n8.-  **** Find an optimal combination of remaining targets **** \n')
@@ -275,10 +274,12 @@ tempModel = setParam(tempModel,'lb',targetRxn,0);
 %set Max product formation as objective function
 tempModel = setParam(tempModel,'obj',targetRxn,+1);
 %constrain enzyme usages with optimal biomass formation profile (WT)
-tempModel.lb(candidates.enz_pos(find(candidates.enz_pos))) = 1.01*candidates.maxUsageBio(find(candidates.enz_pos));
-tempModel.ub(candidates.enz_pos(find(candidates.enz_pos))) = 0.99*candidates.pUsageBio(find(candidates.enz_pos));
+toChange = isnan(candidates.maxUsageBio);
+tempModel.lb(candidates.enz_pos(~toChange)) = 1.01*-candidates.maxUsageBio(~toChange);
+tempModel.lb(candidates.enz_pos(toChange))  = 1.01*-candidates.enzUsageBio(toChange);
+tempModel.ub(candidates.enz_pos)            = 0.99*-candidates.enzUsageBio;
 %Run mechanistic validation of targets
-[optStrain,remaining] = constructMinimalMutant(tempModel,candidates,modelParam);
+[optStrain,remaining] = constructMinimalMutant(tempModel,candidates,targetRxn,csRxn,csMW,params.bioRxn);
 %get a gene-mets graph with the remaining targets 
 if graphPlot
     MetsIndxs    = (~contains(optStrain.metNames,'prot_'));
@@ -290,17 +291,15 @@ if graphPlot
 end
 fprintf(['\n    * The predicted optimal strain contains ' num2str(height(remaining)) ' gene modifications \n']) 
 
-writetable(remaining,fullfile(output_dir, 'candidates_L3.txt'),'Delimiter','\t','QuoteStrings',false);
+writetable(remaining,fullfile(outputPath, 'candidates_L3.txt'),'Delimiter','\t','QuoteStrings',false);
 
 % 9. Generate transporter targets file (lists a number of transport steps
 % with no enzymatic annotation that are relevant for enhancing target
 % product formation.
 
 fprintf('\n9.-  **** Find transporter reactions with no enzyme association predicted as targets by ecFSEOF **** \n')
-rxnsTable     = readtable(file2,'Delimiter','\t');
-transpTargets = getTransportTargets(rxnsTable,tempModel);
+transpTargets = getTransportTargets(cell2table(results.rxnsTable, ...
+    'VariableNames', {'rxn_IDs' 'rxnNames' 'K_score' 'grRules' 'rxn_formula'}),tempModel);
 fprintf(['\n    * ' num2str(height(transpTargets)) ' transport reaction targets were found \n']) 
-writetable(transpTargets,fullfile(output_dir, 'transporter_targets.txt'),'Delimiter','\t','QuoteStrings',false);
-delete(file1)
-delete(file2)
+writetable(transpTargets,fullfile(outputPath, 'transporter_targets.txt'),'Delimiter','\t','QuoteStrings',false);
 end
