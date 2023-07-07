@@ -40,8 +40,8 @@ elseif strcmpi(method,'pFBA')
         if ~isempty(minIndex)
             %Fix optimal value for the objective and then minimize the total
             %sum of protein usages
-            mutant = setParam(mutant,'obj',minIndex,-1);
-            mutant = setParam(mutant,'lb',index,(1-tol)*mutSolution(index));
+            mutant = setParam(mutant,'obj',minIndex,1);
+            mutant = setParam(mutant,'lb',index,(1+tol)*mutSolution(index));
             mutSolution      = solveLP(mutant);
             if ~isempty(mutSolution.x) && any(mutSolution.x)
                 mutSolution = mutSolution.x;
