@@ -3,8 +3,6 @@ function fvaTable = enzymeUsage_FVA(model,enzymes)
 %   Perf
 %
 %   Usage: FVAtable = enzymeUsage_FVA(model,enzymes)
-%
-%   Ivan Domenzain.     Last edited 2020-05-27
 
 if nargin < 2
     enzymes = model.ec.enzymes;

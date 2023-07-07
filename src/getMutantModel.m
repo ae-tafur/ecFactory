@@ -23,8 +23,7 @@ function [mutantModel,success] = getMutantModel(model,modifications,base_usage,v
 %   mutantModel     Mutant model with new constraints
 %
 %   Usage: mutantModel = getMutantModel(model,modifications,base_usage,message)
-%
-%   Ivan Domenzain.     Last edited 2022-08-19
+
 if nargin<4
     verbose = false;
     if nargin<3

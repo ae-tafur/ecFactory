@@ -12,9 +12,6 @@ function [depGenes,EQmatrix,IndGenes] = getGeneDepMatrix(GM_matrix)
 %             related to exactly the same metabolites in the network.
 %   IndGenes  (logical) Vector indicating those genes which are not equal
 %             to any other, according to GM_matrix.
-%
-%   Last modified.  Iván Domenzain 2019-10-28 
-%
 
 %Get relevant dimensions 
 [~,G] = size(GM_matrix);

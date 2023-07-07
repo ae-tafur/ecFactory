@@ -19,9 +19,6 @@ function [mutSolution,flag] = solveECmodel(mutant,model,method,minIndex,tol)
 % flag          TRUE if sumulation was succesful
 %
 % Usage: [mutSolution,flag] = solveECmodel(mutant,model,method,prots)
-%
-% Last modified.  Ivan Domenzain 2020-07-16
-%
 
 if nargin<5
     tol = 0;

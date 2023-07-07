@@ -17,9 +17,6 @@ function [GeneMetMatrix,metsConectivity,genesConectivity] = getMetGeneMatrix(mod
 %                    metabolite
 %
 %   Usage:  [GeneMetMatrix, metsConectivity,genesConectivity] = getGeneMetMatrix(model,genes)
-% 
-%   Last modified.  Iván Domenzain 2019-10-29
-%
 
 %Manage exceptions
 if nargin<2

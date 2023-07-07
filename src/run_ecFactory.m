@@ -1,4 +1,33 @@
 function [optStrain,remaining] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield,essential,outputPath,graphPlot,modelAdapter)
+% run_ecFactory
+%   Run ecFactory methods to fin and optimal mutant based on ecFSEOF
+%   results for a specfified production target.
+%
+% Input:
+%   ecModel         an ecModel in GECKO 3 format (with ecModel.ec structure).
+%   targetRxn       rxn ID for the production target reaction, a exchange
+%                   reaction is recommended.
+%   csRxn           rxn ID for the main carbon source uptake reaction.
+%   csMW            Molecular weigth for the carbon source in grams/mmol.
+%   nSteps          a suboptimal yield value to run ecFactory (e.g., 0.1 g/g)
+%   essential       file name for essential list of genes. (Optional,
+%                   default ecFactory will look the 'data' sub-folder from
+%                   GECKO v3 structure and taken from
+%                   modelAdapter, e.g. data/essential_genes.tsv)
+%   outputPath      path to save results output files.(Optional, default
+%                   in the 'output' sub-folder taken from
+%                   modelAdapter, e.g. output/ecFSEOF_genes.tsv
+%   file_rxns       true or false if a plot with targets interaction at
+%                   metabolite level is desired. (Optional, default false)
+%   modelAdapter    a loaded model adapter. (Optional, will otherwise use
+%                   the default model adapter)
+%
+% Output:
+%   optStrain       Optimal strain
+%   remaining       gene target suggested for optimal strain
+%
+% Usage:
+%   [optStrain,remaining] = run_ecFactory(model,targetRxn,csRxn,csMW,expYield)
 
 if nargin < 9 || isempty(modelAdapter)
     modelAdapter = ModelAdapterManager.getDefault();
