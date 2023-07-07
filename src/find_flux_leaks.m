@@ -1,4 +1,4 @@
-function candidates = block_leaks(candidates,targetIdx,model)
+function candidates = find_flux_leaks(candidates,targetIdx,model)
 %assuming that all models have an exchange reaction as objective
 met    = model.metNames(find(model.S(:,targetIdx)));
 cytIdx = find(strcmpi(model.compNames,'cytoplasm'));
@@ -25,13 +25,13 @@ for i=1:length(grRules)
         newTargets = genes(~presence);
         for j=1:length(newTargets)
             gene = strtrim(newTargets{j});
-            enzGeneIdx = find(strcmp(model.enzGenes,gene));
+            enzGeneIdx = find(strcmp(model.ec.genes,gene));
             EV_type = {'flux_leak'};
             if ~isempty(enzGeneIdx)
-                enzyme = model.enzymes(enzGeneIdx);
-                MW = model.MWs(enzGeneIdx);
-                shortName = model.enzNames(enzGeneIdx);
-                pathway = model.pathways(enzGeneIdx);
+                enzyme = model.ec.enzymes(enzGeneIdx);
+                MW = model.ec.mw(enzGeneIdx);
+                shortName = model.geneShortNames(enzGeneIdx);
+                pathway = {''}; % model.pathways(enzGeneIdx);
             else
                 enzyme = {''};
                 MW = NaN;

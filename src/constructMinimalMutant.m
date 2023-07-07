@@ -1,12 +1,17 @@
-function [optMutant,remaining] = constructMinimalMutant(model,candidates,modelParam)
+function [optMutant,remaining] = constructMinimalMutant(model,candidates,targetRxn,csRxn,csMW,bioRxn)
 tol =-1E-12;%-1E-6;
 tempModel = model;
+
+targetRxnIdx = getIndexes(model, targetRxn,'rxns');
+csRxnIdx = getIndexes(model, csRxn,'rxns');
+bioRxnIdx = getIndexes(model, bioRxn,'rxns');
+
 %Get max WT production rate
-WTsol_prod = solveECmodel(tempModel,tempModel,'pFBA',modelParam.prot_indx);
+WTsol_prod = solveECmodel(tempModel,tempModel,'pFBA','prot_pool_exchange');
 %Get max WT production yield
-WTsol_yield = solveECmodel(tempModel,tempModel,'pFBA',modelParam.CUR_indx);
-WTprodR = WTsol_prod(modelParam.targetIndx);
-WTyield = WTsol_yield(modelParam.targetIndx)/(WTsol_yield(modelParam.CUR_indx));
+WTsol_yield = solveECmodel(tempModel,tempModel,'pFBA',csRxn);
+WTprodR = WTsol_prod(targetRxnIdx);
+WTyield = WTsol_yield(targetRxnIdx)/abs(WTsol_yield(csRxnIdx));
 %get mutant with all modifications
 optMutant=model;
 toRemove = [];
@@ -20,10 +25,16 @@ for i=1:height(candidates)
     tempModel = optMutant;
 
     if enzIdx>0
-        tempModel.ub(enzIdx) = 1.01*candidates.maxUsage(i);
-        tempModel.lb(enzIdx) = 0;
+        % Validate if it was posible to get maximum values
+        if ~isnan(candidates.maxUsage(i))
+            tempModel.lb(enzIdx) = 1.01*-candidates.maxUsage(i);
+        % Otherwise use the enzyme usage value
+        else
+            tempModel.lb(enzIdx) = 1.01*-candidates.enzUsage(i);
+        end
+        tempModel.ub(enzIdx) = 0;
         if tempModel.ub(enzIdx) <=tempModel.lb(enzIdx)
-            tempModel.lb(enzIdx) = 0.95*tempModel.ub(enzIdx);
+            % tempModel.lb(enzIdx) = 0.95*tempModel.ub(enzIdx);
         end
 
         optMutant = tempModel;
@@ -58,19 +69,17 @@ if ~isempty(toRemove)
     candidates(toRemove,:) = [];
 end
 
-optMutant = setParam(optMutant,'obj',modelParam.targetIndx,1);
+optMutant = setParam(optMutant,'obj',targetRxn,1);
 %obtain optimal production rate and yield
-[mutSol_r,~] = solveECmodel(optMutant,model,'pFBA',modelParam.prot_indx);
-[mutSol_y,~] = solveECmodel(optMutant,model,'pFBA',modelParam.CUR_indx);
-OptprodR = mutSol_y(modelParam.targetIndx);
-Optyield = mutSol_y(modelParam.targetIndx)/(mutSol_y(modelParam.CUR_indx));
-bYield   = mutSol_y(modelParam.growth_indx)/(mutSol_y(modelParam.CUR_indx)*modelParam.CS_MW);
+[mutSol_r,~] = solveECmodel(optMutant,model,'pFBA','prot_pool_exchange');
+[mutSol_y,~] = solveECmodel(optMutant,model,'pFBA',csRxn);
+OptprodR = mutSol_y(targetRxnIdx);
+Optyield = mutSol_y(targetRxnIdx)/abs(mutSol_y(csRxnIdx));
+bYield   = mutSol_y(bioRxnIdx)/(abs(mutSol_y(csRxnIdx))*csMW);
 disp('Finding a minimal combination of targets displaying:')
 disp([' - a production rate of: ' num2str(OptprodR) ' mmol/gDwh'])
-disp([' - a production yield of: ' num2str(Optyield) ' mmol/mmol ' ...
-    erase(modelParam.CSname, ' exchange (reversible)')])
-disp([' - a biomass yield of: ' num2str(bYield) 'g biomass/g ' ...
-    erase(modelParam.CSname, ' exchange (reversible)')])
+disp([' - a production yield of: ' num2str(Optyield) ' mmol/mmol '])
+disp([' - a biomass yield of: ' num2str(bYield) 'g biomass/g '])
 disp(' ')
 %sort targets by priority level and k_score
 [levelCandidates,~] = sortrows(candidates,{'priority' 'k_scores'},{'ascend' 'ascend'});
@@ -86,16 +95,16 @@ for i=1:height(levelCandidates)
     tempMutant = optMutant;
     %revert mutation
     if enzIdx>0
-        saturationOpt         = mutSol_r(enzIdx)/(optMutant.ub(enzIdx)+1E-15);
-        tempMutant.ub(enzIdx) = 1.01*model.ub(enzIdx);
-        tempMutant.lb(enzIdx) = 0.99*model.lb(enzIdx);
+        saturationOpt         = mutSol_r(enzIdx)/(optMutant.lb(enzIdx)+-1e-15);
+        tempMutant.lb(enzIdx) = 1.01*model.lb(enzIdx);
+        tempMutant.ub(enzIdx) = 0.99*model.ub(enzIdx);
         if tempMutant.ub(enzIdx) <=tempMutant.lb(enzIdx)
-            tempMutant.lb(enzIdx) = 0.95*tempMutant.ub(enzIdx);
+           % tempMutant.lb(enzIdx) = 0.95*tempMutant.ub(enzIdx);
         end
         
     %for reactions without enzymatic reaction
     else
-        enzUsage = 1E-12;
+        enzUsage = 1e-12;
         if strcmpi(action,'KO')
             reversal = {'OE'};
         else
@@ -110,15 +119,15 @@ for i=1:height(levelCandidates)
         saturationOpt = NaN;
     end
     %Get max WT production rate
-    mutsol_prod = solveECmodel(tempMutant,tempMutant,'pFBA',modelParam.prot_indx);
+    mutsol_prod = solveECmodel(tempMutant,tempMutant,'pFBA','prot_pool_exchange');
     %Get max WT production yield
-    mutsol_yield = solveECmodel(tempMutant,tempMutant,'pFBA',modelParam.CUR_indx);
-    mutprodR     = mutsol_prod(modelParam.targetIndx);
-    mutyield     = mutsol_yield(modelParam.targetIndx)/(mutsol_yield(modelParam.CUR_indx));
+    mutsol_yield = solveECmodel(tempMutant,tempMutant,'pFBA',csRxn);
+    mutprodR     = mutsol_prod(targetRxnIdx);
+    mutyield     = mutsol_yield(targetRxnIdx)/abs(mutsol_yield(csRxnIdx));
     flag = true;
     if enzIdx>0 && numel(enzIdx)==1
-        saturationM =  mutsol_yield(enzIdx)/(tempMutant.ub(enzIdx)+1E-15);
-        if (strcmpi(action,'OE') & saturationM <= (model.ub(enzIdx)/levelCandidates.maxUsage(i)))
+        saturationM =  mutsol_yield(enzIdx)/(tempMutant.lb(enzIdx)+-1e-15);
+        if (strcmpi(action,'OE') & saturationM <= (abs(model.lb(enzIdx))/levelCandidates.maxUsage(i)))
             flag = false;
         end
     else
@@ -148,5 +157,5 @@ for i=1:height(levelCandidates)
     end
 end
 remaining = sortrows(remaining,{'priority' 'k_scores'},{'ascend' 'descend'});
-remaining= removevars(remaining,{'enz_pos' 'OE' 'minUsage' 'maxUsage' 'pUsage' 'minUsageBio' 'maxUsageBio' 'pUsageBio'});
+remaining = removevars(remaining,{'enz_pos' 'OE' 'minUsage' 'maxUsage' 'enzUsage' 'minUsageBio' 'maxUsageBio' 'enzUsageBio'});
 end
