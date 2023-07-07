@@ -4,15 +4,20 @@
 
 The ecFactory method is a series of sequential steps for identification of metabolic engineering gene targets. These targets show which genes should be subject to overexpression, modulated expression (knock-down) or deletion (knock-out), with the objective of increasing production of a given metabolite. This method was developed by combining the principles of the FSEOF algorithm (flux scanning with enforced objective function) together with the features of GECKO enzyme-constrained metabolic models (ecModels), which incorporate enzymes as part of genome-scale metabolic networks.
 
-## Required Software
+## Citation
+    - 
+
+## Getting started
+
+### Required software
 * A functional Matlab installation (MATLAB 7.3 or higher). 
-* The [RAVEN toolbox for MATLAB](https://github.com/SysBioChalmers/RAVEN).
+* The [RAVEN toolbox for MATLAB](https://github.com/SysBioChalmers/RAVEN.git).
 * [Gurobi Optimizer](http://www.gurobi.com/registration/download-reg) for any simulations.
-* [Git](https://git-scm.com/downloads)
+* [GECKO 3.0 or higher](https://github.com/SysBioChalmers/GECKO.git)
 
-## Installation
+### Installation
 
-Clone this repository into an accesible directory in your computer. No further steps are needed.
+Clone this repository into an accessible directory in your computer. No further steps are needed.
 
 ## Tutorial
 
@@ -22,7 +27,7 @@ A case study for prediction of metabolic engineering targets for increased produ
 
 All the relevant outputs of the method are stored in the `tutorials/results` folder in this repository.
 
-Last update: 2022-09-17
+## Previous version
 
-This repository is administered by [Iván Domenzain](https://github.com/IVANDOMENZAIN), Division of Systems and Synthetic Biology, Department of Biology and Biological Engineering, Chalmers University of Technology.
+Due to significant refactoring of the code, GECKO version 3 is largely not backwards compatible with earlier GECKO versions. Then, compatibility of this repo with initial version of ecFactory is not supported
 
