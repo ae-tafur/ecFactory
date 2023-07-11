@@ -84,10 +84,10 @@ uptake = abs(sol.x(csRxnIdx));
 if ~isempty(targetRxnIdx)
     %Check if model can carry flux for the target rxn
     [~, maxFlux, ~] = getAllowedBounds(model, targetRxn);
-    if maxFlux
-        disp(['* Your ecModel can carry flux through the reaction: ' model.rxnNames{targetRxnIdx}])
+    if maxFlux > 0
+        fprintf(['\n    * Your ecModel can carry flux through the reaction: ' model.rxnNames{targetRxnIdx} '.\n'])
     else
-        disp(['* Your ecModel cannot carry flux through the reaction: ' model.rxnNames{targetRxnIdx} ', please check the applied constraints'])
+        fprintf(['\n    * Your ecModel cannot carry flux through the reaction: ' model.rxnNames{targetRxnIdx} ', please check the applied constraints.\n'])
     end
 else
     error('The provided target reaction is not part of the ecModel.rxns field')
@@ -97,7 +97,7 @@ end
 % 1.- Run FSEOF to find gene candidates
 
 fprintf('\n1.- **** Running ecFSEOF method (from GECKO utilities) **** \n\n')
-results = run_ecFSEOF(model,targetRxn,csRxn,alphaLims,nSteps,file_genes,file_rxns);
+results = ecFSEOF(model,targetRxn,csRxn,alphaLims,nSteps,file_genes,file_rxns);
 genes   = results.geneTable(:,1);
 fprintf(['\n  ecFSEOF returned ' num2str(length(genes)) ' targets \n'])
 
@@ -177,7 +177,7 @@ fprintf(['\n    * Fixed ' erase(model.rxnNames{csRxnIdx}, ' exchange') ' uptake 
 tempModel = setParam(tempModel, 'var', csRxn, -uptake, tol);
 fprintf('    * Fixed suboptimal biomass production, according to provided experimental yield.')
 %Fix suboptimal experimental biomass yield conditions
-V_bio = expYield*csMW;
+V_bio = expYield * csMW * uptake;
 tempModel.lb(bioRxnIdx) = V_bio;
 fprintf([' V_bio = ' num2str(V_bio) ' h-1 \n'])
 fprintf('    * Production rate constrained to its maximum attainable value.')
